@@ -40,16 +40,19 @@ const SERVICE_TEMPLATES = {
 let STATE = { clients: [], view: 'dashboard', filter: 'all', activeClientId: null, loaded: false };
 
 /* ============================= STORAGE ============================= */
+/* Uses the browser's localStorage — data lives on this device, in this
+   browser, and persists across page reloads and restarts. */
+const STORAGE_KEY = 'signal-clients';
 async function loadClients(){
   try{
-    const res = await window.storage.get('clients', false);
-    STATE.clients = res && res.value ? JSON.parse(res.value) : [];
+    const raw = localStorage.getItem(STORAGE_KEY);
+    STATE.clients = raw ? JSON.parse(raw) : [];
   }catch(e){ STATE.clients = []; }
   STATE.loaded = true;
 }
 async function saveClients(){
   try{
-    await window.storage.set('clients', JSON.stringify(STATE.clients), false);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE.clients));
   }catch(e){ showToast('Could not save — changes may not persist.'); }
 }
 
@@ -166,7 +169,22 @@ function fmtDate(d){ if(!d) return '—'; return new Date(d+'T00:00:00').toLocal
 /* ============================= APP RENDER ============================= */
 const app = document.getElementById('app');
 
+function showFatalError(err){
+  console.error(err);
+  const msg = (err && err.message) ? err.message : String(err);
+  const stack = (err && err.stack) ? err.stack : '';
+  app.innerHTML = `<div style="padding:40px;max-width:820px;font-family:monospace;color:#E9EDF3;">
+    <h2 style="color:#FF5C6C;margin-top:0;">Signal hit an error while loading</h2>
+    <div style="background:#1E2632;border:1px solid #FF5C6C;border-radius:8px;padding:14px;white-space:pre-wrap;">${msg}</div>
+    <div style="margin-top:14px;opacity:.6;white-space:pre-wrap;font-size:12px;">${stack}</div>
+    <div style="margin-top:16px;color:#93A1B3;font-family:sans-serif;font-size:13px;">Copy this message and send it back for a fix.</div>
+  </div>`;
+}
+window.addEventListener('error', (e)=> showFatalError(e.error || e.message));
+window.addEventListener('unhandledrejection', (e)=> showFatalError(e.reason));
+
 function render(){
+ try {
   const counts = {all:STATE.clients.length, green:0, yellow:0, red:0};
   STATE.clients.forEach(c=>{ counts[effectiveStatus(c).status]++; });
   const redClients = STATE.clients.filter(c=>effectiveStatus(c).status==='red');
@@ -187,11 +205,10 @@ function render(){
       </nav>
       <div class="sidebar-foot">Data is stored privately for you only, in this app's memory.</div>
     </div>
-    <main id="main"></main>
   `));
+  const main = el(`<main id="main"></main>`);
+  app.appendChild(main);
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{ STATE.view=b.dataset.nav; STATE.activeClientId=null; render(); });
-
-  const main = document.getElementById('main');
 
   if(STATE.view==='dashboard' && !STATE.activeClientId){
     renderDashboard(main, counts, redClients);
@@ -200,6 +217,9 @@ function render(){
   } else if(STATE.view==='reports'){
     renderReportsView(main);
   }
+ } catch(err) {
+   showFatalError(err);
+ }
 }
 
 function renderDashboard(main, counts, redClients){
@@ -630,7 +650,11 @@ function renderReportsView(main){
 
 /* ============================= INIT ============================= */
 (async function init(){
-  app.innerHTML = `<div style="padding:40px;color:var(--text-dim);">Loading your clients…</div>`;
-  await loadClients();
-  render();
+  try {
+    app.innerHTML = `<div style="padding:40px;color:var(--text-dim);">Loading your clients…</div>`;
+    await loadClients();
+    render();
+  } catch(err) {
+    showFatalError(err);
+  }
 })();
