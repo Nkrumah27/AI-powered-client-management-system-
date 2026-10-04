@@ -451,7 +451,7 @@ function openAddClientModal(){
       id: 'c_' + Date.now() + Math.random().toString(36).slice(2,7),
       name, email, isNew: !formState.isExisting, startDate: start, notes,
       services: formState.services, metricsConfig, targets,
-      entries: {}, manualStatus: null, aiReports: []
+      entries: {}, manualStatus: null, aiReports: [], todos: []
     };
     STATE.clients.push(client);
     await saveClients();
@@ -533,6 +533,61 @@ function renderClientDetail(main){
     render();
   };
   left.appendChild(entryPanel);
+
+  // To-do list
+  const todoPanel = el(`
+    <div class="panel">
+      <h3>To-do</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input type="text" id="todoInput" placeholder="Add a task...">
+        <button class="btn btn-sm btn-primary" id="addTodoBtn">Add</button>
+      </div>
+      <div id="todoList"></div>
+    </div>
+  `);
+  function renderTodoList(){
+    const list = todoPanel.querySelector('#todoList');
+    list.innerHTML = '';
+    const todos = client.todos || [];
+    if(!todos.length){
+      list.appendChild(el(`<div class="hint">No tasks yet.</div>`));
+      return;
+    }
+    todos.forEach(t=>{
+      const row = el(`
+        <div class="todo-item ${t.done?'done':''}">
+          <input type="checkbox" ${t.done?'checked':''}>
+          <span class="todo-text">${t.text}</span>
+          <button class="todo-del" title="Remove">&times;</button>
+        </div>
+      `);
+      row.querySelector('input[type=checkbox]').onchange = async (e)=>{
+        t.done = e.target.checked;
+        await saveClients();
+        renderTodoList();
+      };
+      row.querySelector('.todo-del').onclick = async ()=>{
+        client.todos = (client.todos||[]).filter(x=>x.id!==t.id);
+        await saveClients();
+        renderTodoList();
+      };
+      list.appendChild(row);
+    });
+  }
+  async function addTodo(){
+    const input = todoPanel.querySelector('#todoInput');
+    const text = input.value.trim();
+    if(!text) return;
+    client.todos = client.todos || [];
+    client.todos.push({id:'t_'+Date.now()+Math.random().toString(36).slice(2,6), text, done:false});
+    input.value = '';
+    await saveClients();
+    renderTodoList();
+  }
+  todoPanel.querySelector('#addTodoBtn').onclick = addTodo;
+  todoPanel.querySelector('#todoInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') addTodo(); });
+  renderTodoList();
+  left.appendChild(todoPanel);
 
   const historyPanel = el(`
     <div class="panel">
